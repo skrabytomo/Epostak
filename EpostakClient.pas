@@ -4,8 +4,9 @@ unit EpostakClient;
   Klient pre epostak.sk SAPI-SK API (Peppol Access Point)
   Delphi 6 / WinInet - rovnaky transportny mechanizmus ako povodny Ep24Client.
 
-  Podporuje: auth (client_credentials), odoslanie UBL dokumentu, zoznam
-  prijatych dokumentov, stiahnutie UBL prijateho dokumentu, potvrdenie (ack).
+  Podporuje: auth (client_credentials, refresh, revoke, status), odoslanie
+  UBL dokumentu, zoznam prijatych dokumentov (s pagination), stiahnutie UBL
+  prijateho dokumentu, potvrdenie (ack), retry pre retryable chyby.
 
   Doc: https://epostak.sk/api/docs
   ============================================================================ }
@@ -22,6 +23,7 @@ type
     IsSuccess: Boolean;
     ErrorCode: string;
     ErrorMessage: string;
+    RequestId: string;      // pre podporu - z chybovej odpovede
   end;
 
   TEpostakDocument = record
@@ -44,9 +46,14 @@ type
     FClientSecret: string;
     FParticipantId: string;        // X-Peppol-Participant-Id pouzity pre dalsie volania
     FAccessToken: string;
+    FRefreshToken: string;         // pre /auth/renew
     FTokenExpiresAtUTC: TDateTime; // lokalny Now() - casovanie postacuje na TTL logiku
 
-    function DoRequest(const AMethod: TEpostakRequestMethod; const APath, ABody,
+    function DoRequestInternal(const AMethod: TEpostakRequestMethod; const APath, ABody,
+      AContentType: string; AIncludeAuth, AIncludeParticipant: Boolean;
+      const AIdempotencyKey: string): TEpostakResult;
+
+    function DoRequestWithRetry(const AMethod: TEpostakRequestMethod; const APath, ABody,
       AContentType: string; AIncludeAuth, AIncludeParticipant: Boolean;
       const AIdempotencyKey: string): TEpostakResult;
 
@@ -54,6 +61,7 @@ type
     function ExtractJSONInt(const AJSON, AName: string; ADefault: Integer): Integer;
     function JSONEscape(const S: string): string;
     function JSONUnescape(const S: string): string;
+    function GetUTCNowString: string;
     procedure EnsureToken;
     procedure CheckResult(const R: TEpostakResult; const AContext: string);
   public
@@ -61,6 +69,9 @@ type
 
     function GenerateIdempotencyKey: string;
     procedure Authenticate;
+    procedure RenewToken;
+    procedure RevokeToken;
+    function TokenStatus: Boolean;
 
     { Odosielanie - vrati providerDocumentId }
     function SendInvoice(const ADocumentId, ADocumentTypeId, AProcessId,
@@ -68,7 +79,8 @@ type
 
     { Prijimanie - FParticipantId (z konstruktora) urcuje, ktoru schranku citame }
     function ListReceived(const AStatus: string = 'RECEIVED';
-      ALimit: Integer = 100): TEpostakDocumentList;
+      ALimit: Integer = 100; const APageToken: string = '';
+      out ANextPageToken: string = ''): TEpostakDocumentList;
     function GetDocumentXML(const ADocumentId: string): string;
     procedure AcknowledgeDocument(const ADocumentId: string);
 
@@ -156,6 +168,7 @@ begin
   FClientSecret := AClientSecret;
   FParticipantId := AParticipantId;
   FAccessToken := '';
+  FRefreshToken := '';
   FTokenExpiresAtUTC := 0;
 end;
 
@@ -168,6 +181,14 @@ begin
   Result := GUIDToString(GUID);
   if (Length(Result) >= 2) and (Result[1] = '{') and (Result[Length(Result)] = '}') then
     Result := Copy(Result, 2, Length(Result) - 2);
+end;
+
+function TEpostakClient.GetUTCNowString: string;
+var
+  ST: TSystemTime;
+begin
+  GetSystemTime(ST);
+  Result := FormatDateTime('yyyy-mm-dd"T"hh:nn:ss"Z"', SystemTimeToDateTime(ST));
 end;
 
 { ----------------------------------------------------------------------------
@@ -300,7 +321,7 @@ end;
   HTTP - WinInet (rovnaka technika ako povodny Ep24Client.DoRequest)
   ---------------------------------------------------------------------------- }
 
-function TEpostakClient.DoRequest(const AMethod: TEpostakRequestMethod;
+function TEpostakClient.DoRequestInternal(const AMethod: TEpostakRequestMethod;
   const APath, ABody, AContentType: string; AIncludeAuth, AIncludeParticipant: Boolean;
   const AIdempotencyKey: string): TEpostakResult;
 var
@@ -353,17 +374,17 @@ begin
       end;
 
       case AMethod of
-        eqGET:  MethodStr := 'GET';
+        eqGET: MethodStr := 'GET';
         eqPOST: MethodStr := 'POST';
       end;
 
       hSession := InternetOpen('EpostakClient/1.0', INTERNET_OPEN_TYPE_PRECONFIG,
-                                 nil, nil, 0);
+        nil, nil, 0);
       if hSession = nil then
         raise Exception.Create('InternetOpen zlyhal: ' + IntToStr(GetLastError));
 
       hConnect := InternetConnect(hSession, PChar(Host), Port,
-                                    nil, nil, INTERNET_SERVICE_HTTP, 0, 0);
+        nil, nil, INTERNET_SERVICE_HTTP, 0, 0);
       if hConnect = nil then
         raise Exception.Create('InternetConnect zlyhal: ' + IntToStr(GetLastError));
 
@@ -372,7 +393,7 @@ begin
         Flags := Flags or INTERNET_FLAG_SECURE;
 
       hRequest := HttpOpenRequest(hConnect, PChar(MethodStr), PChar(UrlPath + APath),
-                                    'HTTP/1.1', nil, nil, Flags, 0);
+        'HTTP/1.1', nil, nil, Flags, 0);
       if hRequest = nil then
         raise Exception.Create('HttpOpenRequest zlyhal: ' + IntToStr(GetLastError));
 
@@ -399,14 +420,14 @@ begin
       end;
 
       if not HttpSendRequest(hRequest, PChar(Headers), Length(Headers),
-                             BodyPtr, BodyLen) then
+        BodyPtr, BodyLen) then
         raise Exception.Create('HttpSendRequest zlyhal: ' + IntToStr(GetLastError));
 
       StatusCode := 0;
       StatusCodeLen := SizeOf(StatusCode);
       Index := 0;
       if HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE or HTTP_QUERY_FLAG_NUMBER,
-                       @StatusCode, StatusCodeLen, Index) then
+        @StatusCode, StatusCodeLen, Index) then
         Result.HTTPStatus := StatusCode;
 
       repeat
@@ -427,8 +448,10 @@ begin
 
       Result.ResponseBody := ResponseText;
       Result.IsSuccess := (Result.HTTPStatus >= 200) and (Result.HTTPStatus < 300);
+      { Lepse parsovanie chyby - najprv skusime vnoreny error objekt }
       Result.ErrorCode := ExtractJSONString(ResponseText, 'code');
       Result.ErrorMessage := ExtractJSONString(ResponseText, 'message');
+      Result.RequestId := ExtractJSONString(ResponseText, 'requestId');
 
     except
       on E: Exception do
@@ -446,7 +469,44 @@ begin
   end;
 end;
 
+function TEpostakClient.DoRequestWithRetry(const AMethod: TEpostakRequestMethod;
+  const APath, ABody, AContentType: string; AIncludeAuth, AIncludeParticipant: Boolean;
+  const AIdempotencyKey: string): TEpostakResult;
+const
+  MAX_RETRIES = 3;
+  RETRYABLE_CODES: array[0..2] of Integer = (409, 429, 503);
+var
+  Attempt: Integer;
+  IsRetryable: Boolean;
+  i: Integer;
+  DelayMs: Integer;
+begin
+  for Attempt := 1 to MAX_RETRIES do
+  begin
+    Result := DoRequestInternal(AMethod, APath, ABody, AContentType,
+      AIncludeAuth, AIncludeParticipant, AIdempotencyKey);
 
+    if Result.IsSuccess then Exit;
+
+    { Skontrolujeme ci je to retryable chyba }
+    IsRetryable := False;
+    for i := 0 to High(RETRYABLE_CODES) do
+      if Result.HTTPStatus = RETRYABLE_CODES[i] then
+      begin
+        IsRetryable := True;
+        Break;
+      end;
+
+    if not IsRetryable then Exit;
+
+    { Exponencialny backoff: 1s, 2s, 4s }
+    if Attempt < MAX_RETRIES then
+    begin
+      DelayMs := (1 shl (Attempt - 1)) * 1000;
+      Sleep(DelayMs);
+    end;
+  end;
+end;
 
 { ----------------------------------------------------------------------------
   Auth
@@ -455,14 +515,31 @@ end;
 procedure TEpostakClient.EnsureToken;
 begin
   if (FAccessToken = '') or (Now > FTokenExpiresAtUTC) then
-    Authenticate;
+  begin
+    if FRefreshToken <> '' then
+      RenewToken
+    else
+      Authenticate;
+  end;
 end;
-          procedure TEpostakClient.CheckResult(const R: TEpostakResult; const AContext: string);
+
+procedure TEpostakClient.CheckResult(const R: TEpostakResult; const AContext: string);
+var
+  Msg: string;
 begin
   if not R.IsSuccess then
-    raise Exception.CreateFmt('Epostak [%s] HTTP %d'#13#10'%s',
-      [AContext, R.HTTPStatus, R.ResponseBody]);
+  begin
+    Msg := Format('Epostak [%s] HTTP %d'#13#10'%s', [AContext, R.HTTPStatus, R.ResponseBody]);
+    if R.ErrorCode <> '' then
+      Msg := Msg + #13#10'Kod: ' + R.ErrorCode;
+    if R.ErrorMessage <> '' then
+      Msg := Msg + #13#10'Sprava: ' + R.ErrorMessage;
+    if R.RequestId <> '' then
+      Msg := Msg + #13#10'RequestId: ' + R.RequestId;
+    raise Exception.Create(Msg);
+  end;
 end;
+
 procedure TEpostakClient.Authenticate;
 var
   Body, Utf8Body: string;
@@ -476,17 +553,88 @@ begin
     '","client_secret":"' + JSONEscape(FClientSecret) + '"}';
   Utf8Body := UTF8FromAnsi(Body);
 
-  R := DoRequest(eqPOST, '/auth/token', Utf8Body, 'application/json; charset=utf-8',
+  R := DoRequestWithRetry(eqPOST, '/auth/token', Utf8Body, 'application/json; charset=utf-8',
     False, False, '');
   CheckResult(R, 'Authenticate');
 
   FAccessToken := ExtractJSONString(R.ResponseBody, 'access_token');
+  FRefreshToken := ExtractJSONString(R.ResponseBody, 'refresh_token');
   if FAccessToken = '' then
     raise Exception.Create('Epostak: token sa nepodarilo ziskat: ' + R.ResponseBody);
 
   ExpiresIn := ExtractJSONInt(R.ResponseBody, 'expires_in', 900);
   { Obnovime token o minutu skor, nez realne expiruje (TTL je 900s = 15 min). }
   FTokenExpiresAtUTC := Now + ((ExpiresIn - 60) / 86400);
+end;
+
+procedure TEpostakClient.RenewToken;
+var
+  Body, Utf8Body: string;
+  R: TEpostakResult;
+  ExpiresIn: Integer;
+  OldRefresh: string;
+begin
+  if FRefreshToken = '' then
+  begin
+    Authenticate;
+    Exit;
+  end;
+
+  OldRefresh := FRefreshToken;
+  Body := '{"grant_type":"refresh_token","refresh_token":"' + JSONEscape(FRefreshToken) + '"}';
+  Utf8Body := UTF8FromAnsi(Body);
+
+  R := DoRequestWithRetry(eqPOST, '/auth/renew', Utf8Body, 'application/json; charset=utf-8',
+    False, False, '');
+
+  if not R.IsSuccess then
+  begin
+    { Ak renew zlyha (napr. replay protection), fallback na full auth }
+    FRefreshToken := '';
+    Authenticate;
+    Exit;
+  end;
+
+  FAccessToken := ExtractJSONString(R.ResponseBody, 'access_token');
+  FRefreshToken := ExtractJSONString(R.ResponseBody, 'refresh_token');
+  if FAccessToken = '' then
+    raise Exception.Create('Epostak: renew nevratil token: ' + R.ResponseBody);
+
+  ExpiresIn := ExtractJSONInt(R.ResponseBody, 'expires_in', 900);
+  FTokenExpiresAtUTC := Now + ((ExpiresIn - 60) / 86400);
+end;
+
+procedure TEpostakClient.RevokeToken;
+var
+  Body, Utf8Body: string;
+  R: TEpostakResult;
+begin
+  if FAccessToken = '' then Exit;
+
+  Body := '{"token":"' + JSONEscape(FAccessToken) + '"}';
+  Utf8Body := UTF8FromAnsi(Body);
+
+  R := DoRequestInternal(eqPOST, '/auth/revoke', Utf8Body, 'application/json; charset=utf-8',
+    False, False, '');
+  { Idempotentne - vzdy 200 aj ked uz bol revoked }
+
+  FAccessToken := '';
+  FRefreshToken := '';
+  FTokenExpiresAtUTC := 0;
+end;
+
+function TEpostakClient.TokenStatus: Boolean;
+var
+  R: TEpostakResult;
+begin
+  if FAccessToken = '' then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  R := DoRequestInternal(eqGET, '/auth/token/status', '', '', True, False, '');
+  Result := R.IsSuccess and (Pos('"valid":true', R.ResponseBody) > 0);
 end;
 
 { ----------------------------------------------------------------------------
@@ -500,9 +648,13 @@ var
   R: TEpostakResult;
   SavedParticipant: string;
 begin
+  if Length(ADocumentId) > 255 then
+    raise Exception.Create('Epostak: documentId nesmie presahovat 255 znakov (má ' +
+      IntToStr(Length(ADocumentId)) + ')');
+
   EnsureToken;
   IdemKey := GenerateIdempotencyKey;
-  NowUtc := FormatDateTime('yyyy-mm-dd"T"hh:nn:ss"Z"', Now);
+  NowUtc := GetUTCNowString;
 
   Meta := '{"documentId":"' + JSONEscape(ADocumentId) +
     '","documentTypeId":"' + JSONEscape(ADocumentTypeId) +
@@ -519,7 +671,7 @@ begin
   SavedParticipant := FParticipantId;
   FParticipantId := ASenderParticipantId;
   try
-    R := DoRequest(eqPOST, '/document/send', Utf8Body, 'application/json; charset=utf-8',
+    R := DoRequestWithRetry(eqPOST, '/document/send', Utf8Body, 'application/json; charset=utf-8',
       True, True, IdemKey);
   finally
     FParticipantId := SavedParticipant;
@@ -534,17 +686,22 @@ end;
   ---------------------------------------------------------------------------- }
 
 function TEpostakClient.ListReceived(const AStatus: string;
-  ALimit: Integer): TEpostakDocumentList;
+  ALimit: Integer; const APageToken: string;
+  out ANextPageToken: string): TEpostakDocumentList;
 var
   R: TEpostakResult;
   Path, JSON, ArrayContent, ItemJSON: string;
   ArrayStart, ArrayEnd, P, ItemEnd, Count: Integer;
 begin
   SetLength(Result, 0);
+  ANextPageToken := '';
   EnsureToken;
 
   Path := '/document/receive?status=' + AStatus + '&limit=' + IntToStr(ALimit);
-  R := DoRequest(eqGET, Path, '', '', True, True, '');
+  if APageToken <> '' then
+    Path := Path + '&pageToken=' + APageToken;
+
+  R := DoRequestWithRetry(eqGET, Path, '', '', True, True, '');
   CheckResult(R, 'ListReceived');
   JSON := R.ResponseBody;
 
@@ -579,6 +736,9 @@ begin
     else
       Inc(P);
   end;
+
+  { Extrahujeme nextPageToken z root JSONu }
+  ANextPageToken := ExtractJSONString(JSON, 'nextPageToken');
 end;
 
 function TEpostakClient.GetDocumentXML(const ADocumentId: string): string;
@@ -586,10 +746,10 @@ var
   R: TEpostakResult;
 begin
   EnsureToken;
-  R := DoRequest(eqGET, '/document/receive/' + ADocumentId, '', '', True, True, '');
+  R := DoRequestWithRetry(eqGET, '/document/receive/' + ADocumentId, '', '', True, True, '');
   CheckResult(R, 'GetDocumentXML');
   { payload je uz UTF-8 na urovni bajtov (server ho tak posiela); JSONUnescape
-    len odstranuje JSON-strukturalne escapovanie ("\"" -> '"', "\n" -> LF...) }
+    len odstranuje JSON-strukturalne escapovanie (\" -> '"', "\n" -> LF...) }
   Result := ExtractJSONString(R.ResponseBody, 'payload');
 end;
 
@@ -598,7 +758,7 @@ var
   R: TEpostakResult;
 begin
   EnsureToken;
-  R := DoRequest(eqPOST, '/document/receive/' + ADocumentId + '/acknowledge',
+  R := DoRequestWithRetry(eqPOST, '/document/receive/' + ADocumentId + '/acknowledge',
     '', '', True, True, '');
   CheckResult(R, 'AcknowledgeDocument');
 end;
