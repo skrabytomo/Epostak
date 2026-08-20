@@ -164,6 +164,7 @@ object FormMain: TFormMain
     Width = 860
     Height = 250
     Columns = <>
+    MultiSelect = True
     ReadOnly = True
     RowSelect = True
     TabOrder = 11
@@ -208,7 +209,7 @@ object FormMain: TFormMain
     Top = 490
     Width = 150
     Height = 28
-    Caption = 'Potvrdit (acknowledge)'
+    Caption = 'Potvrdit vsetky vybrate'
     TabOrder = 16
     OnClick = btnAcknowledgeSelectedClick
   end
