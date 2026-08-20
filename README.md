@@ -46,7 +46,11 @@
 | `EpostakApp.dpr` / `UMainForm.pas` | Plná GUI aplikácia na odosielanie / inbox |
 | `INTEGRATION.md` | Sprievodca migráciou z epodatelna24 API |
 | `SAPI_REVIEW.md` | Detailný review implementácie vs. SAPI-SK špecifikácia |
-| `sample-invoice.xml` | Vzorová Peppol BIS 3.0 faktúra |
+| `sample-invoice.xml` | Vzorová Peppol BIS 3.0 faktúra (1 položka, 114 EUR) |
+| `sample-invoice-multi-item.xml` | Faktúra s 3 položkami (684 EUR) |
+| `sample-invoice-credit-note.xml` | Dobropis / Credit Note (typ 381, záporné sumy) |
+| `sample-invoice-minimal.xml` | Minimálna validná faktúra (120 EUR) |
+| `sample-invoice-czk.xml` | Faktúra v CZK mene (25200 CZK) |
 
 ## Endpointy (8 štandardných)
 
