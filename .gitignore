@@ -1,0 +1,25 @@
+# Delphi compiled binaries
+*.exe
+*.dll
+*.bpl
+
+# Compiled units
+*.dcu
+*.dcp
+*.bpi
+
+# Delphi backups
+*.~*
+*.bak
+
+# Project local config
+*.cfg
+*.dof
+*.dsk
+*.local
+*.identcache
+*.tvsconfig
+
+# Debug / output
+__history/
+__recovery/
