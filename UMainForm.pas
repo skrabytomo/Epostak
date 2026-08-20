@@ -99,6 +99,7 @@ end;
 function TFormMain.LoadRawBytesFromFile(const AFileName: string): string;
 var
   FS: TFileStream;
+  BOMSize: Integer;
 begin
   Result := '';
   FS := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
@@ -107,7 +108,22 @@ begin
     begin
       SetLength(Result, FS.Size);
       FS.ReadBuffer(Result[1], FS.Size);
+
+      { Odstranime UTF-8 BOM (EF BB BF) ak je pritomny }
+      BOMSize := 0;
+      if (Length(Result) >= 3) and
+         (Ord(Result[1]) = $EF) and
+         (Ord(Result[2]) = $BB) and
+         (Ord(Result[3]) = $BF) then
+        BOMSize := 3;
+
+      if BOMSize > 0 then
+        Delete(Result, 1, BOMSize);
     end;
+  finally
+    FS.Free;
+  end;
+end
   finally
     FS.Free;
   end;
@@ -340,7 +356,7 @@ begin
   if FIRM_B_CLIENT_SECRET = '' then
     Log('POZOR: FIRM_B_CLIENT_SECRET je prazdny v EpostakDemoCreds.pas.')
   else
-    Log('Nastavene ako Firma B (prijemca). Odosielatel = Firma A.');
+    Log('Nastavene ako Firma B. Pre prijem kliknite SKONTROLOVAT INBOX. Pre odoslanie na Firmu A kliknite ODOSLAT.');
 end;
 
 procedure TFormMain.btnBrowseXMLClick(Sender: TObject);
