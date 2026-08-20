@@ -37,6 +37,11 @@ type
 
   TEpostakDocumentList = array of TEpostakDocument;
 
+  TEpostakDocumentListResult = record
+    Documents: TEpostakDocumentList;
+    NextPageToken: string;
+  end;
+
   TEpostakRequestMethod = (eqGET, eqPOST);
 
   TEpostakClient = class
@@ -79,8 +84,7 @@ type
 
     { Prijimanie - FParticipantId (z konstruktora) urcuje, ktoru schranku citame }
     function ListReceived(const AStatus: string = 'RECEIVED';
-      ALimit: Integer = 100; const APageToken: string = '';
-      out ANextPageToken: string): TEpostakDocumentList;
+      ALimit: Integer = 100; const APageToken: string = ''): TEpostakDocumentListResult;
     function GetDocumentXML(const ADocumentId: string): string;
     procedure AcknowledgeDocument(const ADocumentId: string);
 
@@ -686,15 +690,14 @@ end;
   ---------------------------------------------------------------------------- }
 
 function TEpostakClient.ListReceived(const AStatus: string;
-  ALimit: Integer; const APageToken: string;
-  out ANextPageToken: string): TEpostakDocumentList;
+  ALimit: Integer; const APageToken: string): TEpostakDocumentListResult;
 var
   R: TEpostakResult;
   Path, JSON, ArrayContent, ItemJSON: string;
   ArrayStart, ArrayEnd, P, ItemEnd, Count: Integer;
 begin
-  SetLength(Result, 0);
-  ANextPageToken := '';
+  SetLength(Result.Documents, 0);
+  Result.NextPageToken := '';
   EnsureToken;
 
   Path := '/document/receive?status=' + AStatus + '&limit=' + IntToStr(ALimit);
@@ -722,13 +725,13 @@ begin
       if ItemEnd = 0 then Break;
       ItemJSON := Copy(ArrayContent, P, ItemEnd - P + 1);
 
-      SetLength(Result, Count + 1);
-      Result[Count].DocumentId := ExtractJSONString(ItemJSON, 'documentId');
-      Result[Count].DocumentTypeId := ExtractJSONString(ItemJSON, 'documentTypeId');
-      Result[Count].ProcessId := ExtractJSONString(ItemJSON, 'processId');
-      Result[Count].SenderParticipantId := ExtractJSONString(ItemJSON, 'senderParticipantId');
-      Result[Count].ReceiverParticipantId := ExtractJSONString(ItemJSON, 'receiverParticipantId');
-      Result[Count].CreationDateTime := ExtractJSONString(ItemJSON, 'creationDateTime');
+      SetLength(Result.Documents, Count + 1);
+      Result.Documents[Count].DocumentId := ExtractJSONString(ItemJSON, 'documentId');
+      Result.Documents[Count].DocumentTypeId := ExtractJSONString(ItemJSON, 'documentTypeId');
+      Result.Documents[Count].ProcessId := ExtractJSONString(ItemJSON, 'processId');
+      Result.Documents[Count].SenderParticipantId := ExtractJSONString(ItemJSON, 'senderParticipantId');
+      Result.Documents[Count].ReceiverParticipantId := ExtractJSONString(ItemJSON, 'receiverParticipantId');
+      Result.Documents[Count].CreationDateTime := ExtractJSONString(ItemJSON, 'creationDateTime');
       Inc(Count);
 
       P := ItemEnd + 1;
@@ -738,7 +741,7 @@ begin
   end;
 
   { Extrahujeme nextPageToken z root JSONu }
-  ANextPageToken := ExtractJSONString(JSON, 'nextPageToken');
+  Result.NextPageToken := ExtractJSONString(JSON, 'nextPageToken');
 end;
 
 function TEpostakClient.GetDocumentXML(const ADocumentId: string): string;
