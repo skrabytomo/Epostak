@@ -58,6 +58,7 @@ type
     function GetSelectedDocId: string;
     function GetSelectedDocIds: TStringList;
     procedure SetupColumns;
+    function ValidateUBLXml(const AXml: string): string;
     function FormatISODateTime(const AISO: string): string;
     function ShortDocType(const AFullType: string): string;
   end;
@@ -127,6 +128,23 @@ end
   finally
     FS.Free;
   end;
+end;
+
+function TFormMain.ValidateUBLXml(const AXml: string): string;
+{ Jednoducha client-side validacia — kontroluje pritomnost klucovych elementov.
+  Plna Peppol validacia vyzaduje XSD + Schematron, co je mimo rozsah tejto appky. }
+begin
+  Result := '';
+  if Pos('<cac:PostalAddress>', AXml) = 0 then
+    Result := Result + 'Chyba: Chyba PostalAddress (predavatel/odberatel).'#13#10;
+  if Pos('<cac:PartyTaxScheme>', AXml) = 0 then
+    Result := Result + 'Chyba: Chyba PartyTaxScheme (VAT identifikator).'#13#10;
+  if Pos('<cac:PartyLegalEntity>', AXml) = 0 then
+    Result := Result + 'Chyba: Chyba PartyLegalEntity (CompanyID).'#13#10;
+  if Pos('<cbc:InvoiceTypeCode>', AXml) = 0 then
+    Result := Result + 'Chyba: Chyba InvoiceTypeCode.'#13#10;
+  if Pos('<cbc:DocumentCurrencyCode>', AXml) = 0 then
+    Result := Result + 'Chyba: Chyba DocumentCurrencyCode.'#13#10;
 end;
 
 function TFormMain.BuildSampleInvoice(const ADocumentId, AIssueDate, ADueDate,
@@ -377,12 +395,56 @@ end;
 procedure TFormMain.btnSendClick(Sender: TObject);
 var
   Client: TEpostakClient;
-  XML, DocumentId, ProviderDocId: string;
+  UblXml, DocId, ValidationErrors: string;
 begin
-  if edtReceiverId.Text = '' then
+  if Trim(edtBaseURL.Text) = '' then
   begin
-    Log('CHYBA: Vyplnte Participant Id prijemcu.');
+    Log('CHYBA: Vyplnte Base URL.');
     Exit;
+  end;
+
+  if Trim(edtParticipantId.Text) = '' then
+  begin
+    Log('CHYBA: Vyplnte Participant ID (odosielatela).');
+    Exit;
+  end;
+
+  if Trim(edtReceiverId.Text) = '' then
+  begin
+    Log('CHYBA: Vyplnte Prijemcu (Participant ID prijemcu).');
+    Exit;
+  end;
+
+  if Trim(edtXMLFile.Text) = '' then
+  begin
+    Log('Generujem testovaciu fakturu inline...');
+    UblXml := BuildSampleInvoice;
+  end
+  else
+  begin
+    if not FileExists(edtXMLFile.Text) then
+    begin
+      Log('CHYBA: Subor neexistuje: ' + edtXMLFile.Text);
+      Exit;
+    end;
+    Log('Nacitavam XML zo suboru: ' + edtXMLFile.Text);
+    UblXml := LoadRawBytesFromFile(edtXMLFile.Text);
+  end;
+
+  if Trim(UblXml) = '' then
+  begin
+    Log('CHYBA: XML je prazdny.');
+    Exit;
+  end;
+
+  { Client-side validacia pred odoslanim }
+  ValidationErrors := ValidateUBLXml(UblXml);
+  if ValidationErrors <> '' then
+  begin
+    Log('UPOZORNENIE: XML neobsahuje vsetky povinne elementy pre Peppol:');
+    Log(ValidationErrors);
+    Log('Odoslanie moze zlyhat s chybou 422. Pokracovat? (v produkcii zastavte a opravte XML)');
+    { V demo rezime pokracujeme, aby pouzivatel videl chybu zo servera }
   end;
 
   try
@@ -394,6 +456,46 @@ begin
       Exit;
     end;
   end;
+
+  try
+    DocId := 'SANDBOX-' + FormatDateTime('yyyy-mm-dd-hhnnss', Now) + '-' + IntToStr(Random(1000));
+    Log('Odosielam dokument ' + DocId + '...');
+    try
+      Client.SendInvoice(
+        DocId,
+        'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2::Invoice' +
+          '##urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0::2.1',
+        'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0',
+        edtParticipantId.Text,
+        edtReceiverId.Text,
+        UblXml
+      );
+      Log('OK — dokument odoslany.');
+    except
+      on E: Exception do
+      begin
+        { Rozlisujeme typ chyby }
+        if Pos('HTTP 422', E.Message) > 0 then
+        begin
+          Log('CHYBA 422: XML nepreslo Peppol validaciou.');
+          Log('Detail: ' + E.Message);
+          Log('Riesenie: Skontrolujte XML voci pravidlam Peppol BIS 3.0');
+          Log('Validator: https://peppol.helger.com/public/menuitem-validation-bis3');
+        end
+        else if Pos('HTTP 502', E.Message) > 0 then
+        begin
+          Log('CHYBA 502: Server nedokazal dorucit dokument.');
+          Log('Detail: ' + E.Message);
+          Log('Riesenie: Overte ci prijemcove Participant ID existuje v Peppol.');
+        end
+        else
+          Log('CHYBA: ' + E.Message);
+      end;
+    end;
+  finally
+    Client.Free;
+  end;
+end
 
   try
     DocumentId := 'FA-' + FormatDateTime('yyyymmdd-hhnnss', Now);
