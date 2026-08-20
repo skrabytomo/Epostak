@@ -56,7 +56,10 @@ type
       ASenderId, AReceiverId: string): string;
     procedure RefreshInboxList;
     function GetSelectedDocId: string;
+    function GetSelectedDocIds: TStringList;
     procedure SetupColumns;
+    function FormatISODateTime(const AISO: string): string;
+    function ShortDocType(const AFullType: string): string;
   end;
 
 var
@@ -184,14 +187,54 @@ begin
     '</Invoice>';
 end;
 
+function TFormMain.FormatISODateTime(const AISO: string): string;
+var
+  DT: TDateTime;
+begin
+  try
+    DT := EncodeDate(
+      StrToIntDef(Copy(AISO, 1, 4), 2026),
+      StrToIntDef(Copy(AISO, 6, 2), 1),
+      StrToIntDef(Copy(AISO, 9, 2), 1)
+    ) + EncodeTime(
+      StrToIntDef(Copy(AISO, 12, 2), 0),
+      StrToIntDef(Copy(AISO, 15, 2), 0),
+      StrToIntDef(Copy(AISO, 18, 2), 0),
+      0
+    );
+    Result := FormatDateTime('dd.mm.yyyy hh:nn', DT);
+  except
+    Result := AISO;
+  end;
+end;
+
+function TFormMain.ShortDocType(const AFullType: string): string;
+var
+  P: Integer;
+begin
+  Result := AFullType;
+  P := Pos('::', Result);
+  if P > 0 then
+  begin
+    Result := Copy(Result, P + 2, MaxInt);
+    P := Pos('##', Result);
+    if P > 0 then
+      Result := Copy(Result, 1, P - 1);
+  end;
+  if Result = '' then Result := AFullType;
+end;
+
 procedure TFormMain.SetupColumns;
 begin
   lvInbox.ViewStyle := vsReport;
   lvInbox.Columns.Clear;
-  with lvInbox.Columns.Add do begin Caption := 'DocumentId'; Width := 260; end;
-  with lvInbox.Columns.Add do begin Caption := 'Odosielatel'; Width := 150; end;
-  with lvInbox.Columns.Add do begin Caption := 'Typ dokumentu'; Width := 120; end;
-  with lvInbox.Columns.Add do begin Caption := 'Vytvorene'; Width := 140; end;
+  with lvInbox.Columns.Add do begin Caption := '#'; Width := 30; Alignment := taRightJustify; end;
+  with lvInbox.Columns.Add do begin Caption := 'Cislo dokumentu'; Width := 180; end;
+  with lvInbox.Columns.Add do begin Caption := 'Odosielatel'; Width := 130; end;
+  with lvInbox.Columns.Add do begin Caption := 'Prijemca'; Width := 130; end;
+  with lvInbox.Columns.Add do begin Caption := 'Typ'; Width := 80; end;
+  with lvInbox.Columns.Add do begin Caption := 'Vytvorene'; Width := 120; end;
+  with lvInbox.Columns.Add do begin Caption := 'Stav'; Width := 90; end;
 end;
 
 procedure TFormMain.RefreshInboxList;
@@ -203,10 +246,13 @@ begin
   for i := 0 to High(FInboxItems.Documents) do
   begin
     Item := lvInbox.Items.Add;
-    Item.Caption := FInboxItems.Documents[i].DocumentId;
+    Item.Caption := IntToStr(i + 1);
+    Item.SubItems.Add(FInboxItems.Documents[i].DocumentId);
     Item.SubItems.Add(FInboxItems.Documents[i].SenderParticipantId);
-    Item.SubItems.Add(FInboxItems.Documents[i].DocumentTypeId);
-    Item.SubItems.Add(FInboxItems.Documents[i].CreationDateTime);
+    Item.SubItems.Add(FInboxItems.Documents[i].ReceiverParticipantId);
+    Item.SubItems.Add(ShortDocType(FInboxItems.Documents[i].DocumentTypeId));
+    Item.SubItems.Add(FormatISODateTime(FInboxItems.Documents[i].CreationDateTime));
+    Item.SubItems.Add('RECEIVED');
   end;
 end;
 
@@ -214,7 +260,17 @@ function TFormMain.GetSelectedDocId: string;
 begin
   Result := '';
   if (lvInbox.Selected <> nil) then
-    Result := lvInbox.Selected.Caption;
+    Result := lvInbox.Selected.SubItems[0];
+end;
+
+function TFormMain.GetSelectedDocIds: TStringList;
+var
+  i: Integer;
+begin
+  Result := TStringList.Create;
+  for i := 0 to lvInbox.Items.Count - 1 do
+    if lvInbox.Items[i].Selected then
+      Result.Add(lvInbox.Items[i].SubItems[0]);
 end;
 
 procedure TFormMain.FormCreate(Sender: TObject);
@@ -427,37 +483,53 @@ end;
 procedure TFormMain.btnAcknowledgeSelectedClick(Sender: TObject);
 var
   Client: TEpostakClient;
-  DocId: string;
+  DocIds: TStringList;
+  i: Integer;
+  OkCount, FailCount: Integer;
 begin
-  DocId := GetSelectedDocId;
-  if DocId = '' then
-  begin
-    Log('CHYBA: Najprv vyberte dokument v zozname.');
-    Exit;
-  end;
-
+  DocIds := GetSelectedDocIds;
   try
-    Client := MakeClient;
-  except
-    on E: Exception do
+    if DocIds.Count = 0 then
     begin
-      Log('CHYBA: ' + E.Message);
+      Log('CHYBA: Najprv vyberte aspon jeden dokument (Ctrl+klik pre viac).');
       Exit;
     end;
-  end;
 
-  try
-    Log('Potvrdzujem ' + DocId + '...');
     try
-      Client.AcknowledgeDocument(DocId);
-      Log('OZNACENE ako ACKNOWLEDGED.');
-      btnCheckInboxClick(nil);
+      Client := MakeClient;
     except
       on E: Exception do
+      begin
         Log('CHYBA: ' + E.Message);
+        Exit;
+      end;
+    end;
+
+    try
+      Log('Potvrdzujem ' + IntToStr(DocIds.Count) + ' dokumentov...');
+      OkCount := 0;
+      FailCount := 0;
+      for i := 0 to DocIds.Count - 1 do
+      begin
+        try
+          Client.AcknowledgeDocument(DocIds[i]);
+          Inc(OkCount);
+          Log('  OK: ' + DocIds[i]);
+        except
+          on E: Exception do
+          begin
+            Inc(FailCount);
+            Log('  CHYBA [' + DocIds[i] + ']: ' + E.Message);
+          end;
+        end;
+      end;
+      Log('HOTOVO: ' + IntToStr(OkCount) + ' OK, ' + IntToStr(FailCount) + ' chyb.');
+      btnCheckInboxClick(nil);
+    finally
+      Client.Free;
     end;
   finally
-    Client.Free;
+    DocIds.Free;
   end;
 end;
 
