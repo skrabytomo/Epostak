@@ -47,7 +47,7 @@ type
     procedure btnDownloadSelectedClick(Sender: TObject);
     procedure btnAcknowledgeSelectedClick(Sender: TObject);
   private
-    FInboxItems: TEpostakDocumentList;
+    FInboxItems: TEpostakDocumentListResult;
     function ConfigFileName: string;
     procedure Log(const AMsg: string);
     function MakeClient: TEpostakClient;
@@ -203,10 +203,10 @@ begin
   for i := 0 to High(FInboxItems) do
   begin
     Item := lvInbox.Items.Add;
-    Item.Caption := FInboxItems[i].DocumentId;
-    Item.SubItems.Add(FInboxItems[i].SenderParticipantId);
-    Item.SubItems.Add(FInboxItems[i].DocumentTypeId);
-    Item.SubItems.Add(FInboxItems[i].CreationDateTime);
+    Item.Caption := FInboxItems.Documents[i].DocumentId;
+    Item.SubItems.Add(FInboxItems.Documents[i].SenderParticipantId);
+    Item.SubItems.Add(FInboxItems.Documents[i].DocumentTypeId);
+    Item.SubItems.Add(FInboxItems.Documents[i].CreationDateTime);
   end;
 end;
 
@@ -371,7 +371,7 @@ begin
     try
       FInboxItems := Client.ListReceived('RECEIVED', 100);
       RefreshInboxList;
-      Log('Najdenych ' + IntToStr(Length(FInboxItems)) + ' dokumentov.');
+      Log('Najdenych ' + IntToStr(Length(FInboxItems.Documents)) + ' dokumentov.');
     except
       on E: Exception do
         Log('CHYBA: ' + E.Message);
