@@ -328,7 +328,7 @@ begin
   edtClientId.Text := FIRM_A_CLIENT_ID;
   edtClientSecret.Text := FIRM_A_CLIENT_SECRET;
   edtReceiverId.Text := FIRM_B_ID;
-  Log('Nastavene ako Firma A (odosielatel). Prijemca = Firma B.');
+  Log('Nastavene ako Firma A. Pre odoslanie kliknite ODOSLAT (prijemca = Firma B).');
 end;
 
 procedure TFormMain.btnUseFirmBClick(Sender: TObject);
