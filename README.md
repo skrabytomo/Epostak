@@ -1,56 +1,29 @@
-# Epostak — SAPI-SK Delphi Client
+# Epostak — SAPI-SK Delphi Klient
 
-> Delphi 6+ klient pre [ePošťák](https://epostak.sk) SAPI-SK API — slovenský Peppol Access Point.
-
-## Čo to je
-
-`EpostakClient.pas` je minimálna knižnica na odosielanie a prijímanie Peppol BIS 3.0 UBL faktúr cez SAPI-SK štandard. Používa len WinInet — žiadne externé DLL, žiadne závislosti. Kompatibilné s Delphi 6.
+> Delphi 6+ knižnica a aplikácia pre [ePošťák](https://epostak.sk) — slovenský Peppol Access Point.
 
 ## Rýchly štart
 
-1. **Sandbox test** — spusti konzolový test:
-   ```bash
-   # Prelož a spusť EpostakTest.dpr
-   # Automaticky odošle faktúru z Firmy A na Firmu B
-   ```
+1. **Stiahnite** repozitár
+2. **Otvorte** `EpostakApp.dpr` v Delphi
+3. **Kliknite** "Demo: Firma A (send)" → "ODOSLAT"
+4. **Prepnite** na "Demo: Firma B (recv)" → "Skontrolovat inbox"
+5. **Hotovo** — faktúra prešla celým cyklom
 
-2. **GUI test** — spusti vizuálny test:
-   ```bash
-   # Prelož a spusť EpostakTestGUI.dpr
-   # Tlačidlo "Spusti test" v okne
-   ```
-
-3. **Integrácia do vlastného ERP** — pozri `INTEGRATION.md` (migrácia z epodatelna24) alebo použij priamo `EpostakClient`:
-   ```pascal
-   var
-     Client: TEpostakClient;
-   begin
-     Client := TEpostakClient.Create(
-       'https://dev.epostak.sk/sapi/v1',
-       'tvoj-client-id',
-       'tvoj-client-secret',
-       '0245:0000000001'  // Peppol ID
-     );
-     Client.SendInvoice(...);
-   end;
-   ```
+📖 **Kompletný návod** (prechod do produkcie, integrácia, bezpečnosť):  
+👉 **[NAVOD.md](NAVOD.md)**
 
 ## Súbory
 
 | Súbor | Popis |
 |-------|-------|
 | `EpostakClient.pas` | Core knižnica — auth, send, receive, acknowledge, retry, pagination |
-| `EpostakDemoCreds.pas` | Verejné demo credentialy pre sandbox (Firma A / Firma B) |
-| `EpostakTest.dpr` | Konzolový end-to-end test (auth → send → receive → ack) |
-| `EpostakTestGUI.dpr` | GUI verzia testu — okno s logom |
-| `EpostakApp.dpr` / `UMainForm.pas` | Plná GUI aplikácia na odosielanie / inbox |
-| `INTEGRATION.md` | Sprievodca migráciou z epodatelna24 API |
-| `SAPI_REVIEW.md` | Detailný review implementácie vs. SAPI-SK špecifikácia |
-| `sample-invoice.xml` | Vzorová Peppol BIS 3.0 faktúra (1 položka, 114 EUR) |
-| `sample-invoice-multi-item.xml` | Faktúra s 3 položkami (684 EUR) |
-| `sample-invoice-credit-note.xml` | Dobropis / Credit Note (typ 381, záporné sumy) |
-| `sample-invoice-minimal.xml` | Minimálna validná faktúra (120 EUR) |
-| `sample-invoice-czk.xml` | Faktúra v CZK mene (25200 CZK) |
+| `EpostakDemoCreds.pas` | Demo credentialy pre sandbox (Firma A / Firma B) |
+| `EpostakApp.dpr` | Hlavná GUI aplikácia — odosielanie + inbox |
+| `UMainForm.pas` / `.dfm` | GUI formulár s batch acknowledge a formátovaným inboxom |
+| `INTEGRATION.md` | Sprievodca migráciou zo starého epodatelna24 API |
+| `NAVOD.md` | **Kompletný slovenský návod** — sandbox, produkcia, integrácia, FAQ |
+| `sample-invoice*.xml` | 5 vzorových UBL XML faktúr (rôzne scenáre) |
 
 ## Endpointy (8 štandardných)
 
@@ -67,17 +40,24 @@
 
 ## Bezpečnosť
 
-- `client_secret` nikdy necommituj do gitu
-- V produkcii nepoužívaj `EpostakDemoCreds` — použij vlastné credentialy
+- `client_secret` **nikdy** necommitujte do gitu
+- V produkcii použite Windows Credential Manager alebo šifrovaný config
 - Token sa cachuje 14 minút, refresh token 30 dní
-- `RevokeToken` zavolaj pri odhlásení / incidente
+- `RevokeToken` zavolajte pri odhlásení / incidente
+- Rate limit: 100 volaní/minútu
 
 ## Build
 
 - Delphi 6 alebo novší
 - Žiadne externé balíky — len VCL + WinInet
-- Prelož `.dpr`, spusť `.exe`
+- Preložte `.dpr`, spusťte `.exe`
 
-## Licencia
+## Podpora
 
-Bez explicitnej licencie — použitie na vlastné riziko. Pre produkciu kontaktuj [ePošťák](https://epostak.sk).
+- **Dokumentácia API:** https://epostak.sk/api/docs
+- **Kompletný návod:** [NAVOD.md](NAVOD.md)
+- **Migrácia z epodatelna24:** [INTEGRATION.md](INTEGRATION.md)
+
+---
+
+*Repozitár: [github.com/skrabytomo/Epostak](https://github.com/skrabytomo/Epostak)*
