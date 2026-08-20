@@ -80,7 +80,7 @@ type
     { Prijimanie - FParticipantId (z konstruktora) urcuje, ktoru schranku citame }
     function ListReceived(const AStatus: string = 'RECEIVED';
       ALimit: Integer = 100; const APageToken: string = '';
-      out ANextPageToken: string = ''): TEpostakDocumentList;
+      out ANextPageToken: string): TEpostakDocumentList;
     function GetDocumentXML(const ADocumentId: string): string;
     procedure AcknowledgeDocument(const ADocumentId: string);
 
