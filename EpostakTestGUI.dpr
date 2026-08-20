@@ -100,7 +100,7 @@ procedure TFormTest.RunTest;
 var
   ClientA, ClientB: TEpostakClient;
   DocumentId, ProviderDocId, XmlBody: string;
-  Received: TEpostakDocumentList;
+  Received: TEpostakDocumentListResult;
   i, Attempt: Integer;
   Found: Boolean;
 begin
@@ -157,11 +157,11 @@ begin
         begin
           Log('[4] Kontrolujem inbox (pokus ' + IntToStr(Attempt) + '/5)...');
           Received := ClientB.ListReceived('RECEIVED', 20);
-          for i := 0 to High(Received) do
-            if Received[i].DocumentId <> '' then
+          for i := 0 to High(Received.Documents) do
+            if Received.Documents[i].DocumentId <> '' then
             begin
-              Log('    Najdeny dokument: ' + Received[i].DocumentId +
-                '  (od ' + Received[i].SenderParticipantId + ')');
+              Log('    Najdeny dokument: ' + Received.Documents[i].DocumentId +
+                '  (od ' + Received.Documents[i].SenderParticipantId + ')');
               Found := True;
             end;
           if Found then Break;
@@ -169,19 +169,19 @@ begin
           Sleep(2000);
         end;
 
-        if not Found or (Length(Received) = 0) then
+        if not Found or (Length(Received.Documents) = 0) then
         begin
           Log('[4] Ziadny dokument sa nenasiel (skuste znova o chvilu).');
           Exit;
         end;
 
-        Log('[5] Stahujem UBL XML pre ' + Received[0].DocumentId + '...');
+        Log('[5] Stahujem UBL XML pre ' + Received.Documents[0].DocumentId + '...');
         XmlBody := ClientB.GetDocumentXML(Received[0].DocumentId);
         SaveRawBytesToFile(ExtractFilePath(Application.ExeName) + Received[0].DocumentId + '.xml', XmlBody);
-        Log('    Ulozene: ' + Received[0].DocumentId + '.xml (' + IntToStr(Length(XmlBody)) + ' bajtov)');
+        Log('    Ulozene: ' + Received.Documents[0].DocumentId + '.xml (' + IntToStr(Length(XmlBody)) + ' bajtov)');
 
         Log('[6] Potvrdzujem prijatie (acknowledge)...');
-        ClientB.AcknowledgeDocument(Received[0].DocumentId);
+        ClientB.AcknowledgeDocument(Received.Documents[0].DocumentId);
         Log('    OK, oznacene ako ACKNOWLEDGED.');
       except
         on E: Exception do
