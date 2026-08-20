@@ -103,7 +103,7 @@ end;
 var
   ClientA, ClientB: TEpostakClient;
   DocumentId, ProviderDocId, XmlBody, IssueDate: string;
-  Received: TEpostakDocumentList;
+  Received: TEpostakDocumentListResult;
   i, Attempt: Integer;
   Found: Boolean;
 
@@ -152,11 +152,11 @@ begin
       begin
         WriteLn('[4] Kontrolujem inbox (pokus ' + IntToStr(Attempt) + '/5)...');
         Received := ClientB.ListReceived('RECEIVED', 20);
-        for i := 0 to High(Received) do
-          if Received[i].DocumentId <> '' then
+        for i := 0 to High(Received.Documents) do
+          if Received.Documents[i].DocumentId <> '' then
           begin
-            WriteLn('    Najdeny dokument: ' + Received[i].DocumentId +
-              '  (od ' + Received[i].SenderParticipantId + ')');
+            WriteLn('    Najdeny dokument: ' + Received.Documents[i].DocumentId +
+              '  (od ' + Received.Documents[i].SenderParticipantId + ')');
             Found := True;
           end;
         if Found then Break;
@@ -164,19 +164,19 @@ begin
         Sleep(2000);
       end;
 
-      if not Found or (Length(Received) = 0) then
+      if not Found or (Length(Received.Documents) = 0) then
       begin
         WriteLn('[4] Ziadny dokument sa nenasiel v inboxe (skuste znova o chvilu).');
         Exit;
       end;
 
-      WriteLn('[5] Stahujem UBL XML pre ' + Received[0].DocumentId + '...');
+      WriteLn('[5] Stahujem UBL XML pre ' + Received.Documents[0].DocumentId + '...');
       XmlBody := ClientB.GetDocumentXML(Received[0].DocumentId);
-      SaveRawBytesToFile(ExtractFilePath(ParamStr(0)) + Received[0].DocumentId + '.xml', XmlBody);
-      WriteLn('    Ulozene: ' + Received[0].DocumentId + '.xml (' + IntToStr(Length(XmlBody)) + ' bajtov)');
+      SaveRawBytesToFile(ExtractFilePath(ParamStr(0)) + Received.Documents[0].DocumentId + '.xml', XmlBody);
+      WriteLn('    Ulozene: ' + Received.Documents[0].DocumentId + '.xml (' + IntToStr(Length(XmlBody)) + ' bajtov)');
 
       WriteLn('[6] Potvrdzujem prijatie (acknowledge)...');
-      ClientB.AcknowledgeDocument(Received[0].DocumentId);
+      ClientB.AcknowledgeDocument(Received.Documents[0].DocumentId);
       WriteLn('    OK, oznacene ako ACKNOWLEDGED.');
     finally
       ClientB.Free;
