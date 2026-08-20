@@ -200,7 +200,7 @@ var
   Item: TListItem;
 begin
   lvInbox.Items.Clear;
-  for i := 0 to High(FInboxItems) do
+  for i := 0 to High(FInboxItems.Documents) do
   begin
     Item := lvInbox.Items.Add;
     Item.Caption := FInboxItems.Documents[i].DocumentId;
