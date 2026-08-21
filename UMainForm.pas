@@ -420,7 +420,7 @@ begin
       FormatDateTime('yyyy-mm-dd', Now + 30),
       edtParticipantId.Text,
       edtReceiverId.Text);
-  end
+  end;
   else
   begin
     if not FileExists(edtXMLFile.Text) then
