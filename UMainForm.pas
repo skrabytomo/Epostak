@@ -91,13 +91,38 @@ begin
 end;
 
 function TFormMain.MakeClient: TEpostakClient;
+{ Vrati cached klient ak credentialy nesmenili, inak vytvori noveho.
+  Znizuje pocet auth volani — pomaha proti rate limitu (429). }
+var
+  NeedNew: Boolean;
 begin
   if (edtClientId.Text = '') or (edtClientSecret.Text = '') then
     raise Exception.Create('Vyplnte ClientId a ClientSecret (alebo pouzite tlacidlo Firma A / Firma B).');
   if edtParticipantId.Text = '' then
     raise Exception.Create('Vyplnte vlastne Participant Id.');
-  Result := TEpostakClient.Create(edtBaseURL.Text, edtClientId.Text,
-    edtClientSecret.Text, edtParticipantId.Text);
+    
+  NeedNew := True;
+  if FClient <> nil then
+  begin
+    NeedNew := (FClient.FBaseURL <> edtBaseURL.Text) or
+               (FClient.FClientId <> edtClientId.Text) or
+               (FClient.FClientSecret <> edtClientSecret.Text) or
+               (FClient.FParticipantId <> edtParticipantId.Text);
+    if NeedNew then
+    begin
+      FClient.Free;
+      FClient := nil;
+    end;
+  end;
+  
+  if FClient = nil then
+  begin
+    FClient := TEpostakClient.Create(edtBaseURL.Text, edtClientId.Text,
+      edtClientSecret.Text, edtParticipantId.Text);
+    Log('Vytvoreny novy klient (auth sa vykona pri prvom volani).');
+  end;
+  
+  Result := FClient;
 end;
 
 function TFormMain.LoadRawBytesFromFile(const AFileName: string): string;
