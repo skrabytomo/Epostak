@@ -104,10 +104,8 @@ begin
   NeedNew := True;
   if FClient <> nil then
   begin
-    NeedNew := (FClient.FBaseURL <> edtBaseURL.Text) or
-               (FClient.FClientId <> edtClientId.Text) or
-               (FClient.FClientSecret <> edtClientSecret.Text) or
-               (FClient.FParticipantId <> edtParticipantId.Text);
+    NeedNew := not FClient.ConfigMatches(edtBaseURL.Text, edtClientId.Text,
+      edtClientSecret.Text, edtParticipantId.Text);
     if NeedNew then
     begin
       FClient.Free;
