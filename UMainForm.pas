@@ -498,35 +498,6 @@ begin
   end;
 end
 
-  try
-    DocumentId := 'FA-' + FormatDateTime('yyyymmdd-hhnnss', Now);
-
-    if (edtXMLFile.Text <> '') and FileExists(edtXMLFile.Text) then
-    begin
-      Log('Nacitavam XML zo suboru: ' + edtXMLFile.Text);
-      XML := LoadRawBytesFromFile(edtXMLFile.Text);
-    end
-    else
-    begin
-      Log('Ziaden subor - pouzivam vzorovu testovaciu fakturu.');
-      XML := BuildSampleInvoice(DocumentId, FormatDateTime('yyyy-mm-dd', Now),
-        FormatDateTime('yyyy-mm-dd', Now + 14), edtParticipantId.Text, edtReceiverId.Text);
-    end;
-
-    Log('Odosielam ' + DocumentId + ' -> ' + edtReceiverId.Text + '...');
-    try
-      ProviderDocId := Client.SendInvoice(DocumentId, DOC_TYPE_ID, PROCESS_ID,
-        edtParticipantId.Text, edtReceiverId.Text, XML);
-      Log('ODOSLANE. providerDocumentId = ' + ProviderDocId);
-    except
-      on E: Exception do
-        Log('ODOSLANIE ZLYHALO: ' + E.Message);
-    end;
-  finally
-    Client.Free;
-  end;
-end;
-
 procedure TFormMain.btnCheckInboxClick(Sender: TObject);
 var
   Client: TEpostakClient;
