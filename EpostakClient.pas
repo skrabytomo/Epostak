@@ -544,6 +544,15 @@ begin
   end;
 end;
 
+function TEpostakClient.ConfigMatches(const ABaseURL, AClientId, AClientSecret,
+  AParticipantId: string): Boolean;
+begin
+  Result := (FBaseURL = ABaseURL) and
+            (FClientId = AClientId) and
+            (FClientSecret = AClientSecret) and
+            (FParticipantId = AParticipantId);
+end;
+
 procedure TEpostakClient.Authenticate;
 var
   Body, Utf8Body: string;
