@@ -124,10 +124,6 @@ begin
   finally
     FS.Free;
   end;
-end
-  finally
-    FS.Free;
-  end;
 end;
 
 function TFormMain.ValidateUBLXml(const AXml: string): string;
