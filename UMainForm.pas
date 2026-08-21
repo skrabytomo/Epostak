@@ -37,6 +37,7 @@ type
     memLog: TMemo;
     dlgOpenXML: TOpenDialog;
     procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
     procedure btnSaveConfigClick(Sender: TObject);
     procedure btnUseFirmAClick(Sender: TObject);
     procedure btnUseFirmBClick(Sender: TObject);
@@ -46,7 +47,9 @@ type
     procedure btnCheckInboxClick(Sender: TObject);
     procedure btnDownloadSelectedClick(Sender: TObject);
     procedure btnAcknowledgeSelectedClick(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
   private
+    FClient: TEpostakClient;
     FInboxItems: TEpostakDocumentListResult;
     function ConfigFileName: string;
     procedure Log(const AMsg: string);
@@ -605,6 +608,9 @@ begin
           Client.AcknowledgeDocument(DocIds[i]);
           Inc(OkCount);
           Log('  OK: ' + DocIds[i]);
+          { Pauza medzi volaniami aby sme nepresiahli rate limit (max 10/min) }
+          if i < DocIds.Count - 1 then
+            Sleep(1000);
         except
           on E: Exception do
           begin
