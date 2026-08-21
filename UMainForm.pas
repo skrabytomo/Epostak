@@ -414,7 +414,12 @@ begin
   if Trim(edtXMLFile.Text) = '' then
   begin
     Log('Generujem testovaciu fakturu inline...');
-    UblXml := BuildSampleInvoice;
+    UblXml := BuildSampleInvoice(
+      'SANDBOX-' + FormatDateTime('yyyy-mm-dd-hhnnss', Now),
+      FormatDateTime('yyyy-mm-dd', Now),
+      FormatDateTime('yyyy-mm-dd', Now + 30),
+      edtParticipantId.Text,
+      edtReceiverId.Text);
   end
   else
   begin
