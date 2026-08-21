@@ -496,7 +496,7 @@ begin
   finally
     Client.Free;
   end;
-end
+end;
 
 procedure TFormMain.btnCheckInboxClick(Sender: TObject);
 var
