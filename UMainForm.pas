@@ -47,6 +47,8 @@ type
     procedure btnCheckInboxClick(Sender: TObject);
     procedure btnDownloadSelectedClick(Sender: TObject);
     procedure btnAcknowledgeSelectedClick(Sender: TObject);
+    procedure btnUseSandboxClick(Sender: TObject);
+    procedure btnUseProductionClick(Sender: TObject);
   private
     FClient: TEpostakClient;
     FInboxItems: TEpostakDocumentListResult;
@@ -487,7 +489,7 @@ begin
     DocId := 'SANDBOX-' + FormatDateTime('yyyy-mm-dd-hhnnss', Now) + '-' + IntToStr(Random(1000));
     Log('Odosielam dokument ' + DocId + '...');
     try
-      Client.SendInvoice(
+      DocId := Client.SendInvoice(
         DocId,
         'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2::Invoice' +
           '##urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0::2.1',
@@ -496,7 +498,7 @@ begin
         edtReceiverId.Text,
         UblXml
       );
-      Log('OK — dokument odoslany.');
+      Log('OK — dokument odoslany. providerDocumentId: ' + DocId);
     except
       on E: Exception do
       begin
@@ -653,7 +655,28 @@ end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
 begin
-  FreeAndNil(FClient);
+  if FClient <> nil then
+  begin
+    try
+      FClient.RevokeToken;
+    except
+      { ignorujeme chybu pri zatvrani — token expiruje sam }
+    end;
+    FreeAndNil(FClient);
+  end;
+end;
+
+procedure TFormMain.btnUseSandboxClick(Sender: TObject);
+begin
+  edtBaseURL.Text := EPOSTAK_SANDBOX_BASE_URL;
+  Log('URL prepnuta na SANDBOX: ' + EPOSTAK_SANDBOX_BASE_URL);
+end;
+
+procedure TFormMain.btnUseProductionClick(Sender: TObject);
+begin
+  edtBaseURL.Text := EPOSTAK_PRODUCTION_BASE_URL;
+  Log('URL prepnuta na PRODUKCIU: ' + EPOSTAK_PRODUCTION_BASE_URL);
+  Log('POZOR: Uistite sa, ze mate produkcne ClientId a ClientSecret.');
 end;
 
 end.

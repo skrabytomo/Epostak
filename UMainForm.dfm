@@ -126,6 +126,24 @@ object FormMain: TFormMain
     TabOrder = 6
     OnClick = btnUseFirmBClick
   end
+  object btnUseSandbox: TButton
+    Left = 400
+    Top = 70
+    Width = 90
+    Height = 25
+    Caption = 'URL: Sandbox'
+    TabOrder = 7
+    OnClick = btnUseSandboxClick
+  end
+  object btnUseProduction: TButton
+    Left = 500
+    Top = 70
+    Width = 100
+    Height = 25
+    Caption = 'URL: Produkcia'
+    TabOrder = 8
+    OnClick = btnUseProductionClick
+  end
   object edtXMLFile: TEdit
     Left = 10
     Top = 128

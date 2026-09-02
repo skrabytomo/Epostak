@@ -12,7 +12,8 @@ unit EpostakDemoCreds;
 interface
 
 const
-  EPOSTAK_SANDBOX_BASE_URL = 'https://dev.epostak.sk/sapi/v1';
+  EPOSTAK_SANDBOX_BASE_URL    = 'https://dev.epostak.sk/sapi/v1';
+  EPOSTAK_PRODUCTION_BASE_URL = 'https://epostak.sk/sapi/v1'; // doplnit po ziskani prod pristupov
 
   FIRM_A_ID            = '0245:0000000001'; // odosielatel
   FIRM_A_CLIENT_ID     = '487d008a-b3a5-49d0-be3e-ba45cc9c4ffe';
