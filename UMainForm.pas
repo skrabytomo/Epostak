@@ -498,12 +498,11 @@ begin
     );
     Log('OK — dokument odoslany. providerDocumentId: ' + DocId);
   except
+    on E: EDuplicateDocument do
+      ShowMessage(E.Message);
     on E: Exception do
     begin
-      if Pos('HTTP 409', E.Message) > 0 then
-        ShowMessage('Tento dokument uz bol odoslany (duplicitny documentId).'#13#10 +
-          'Zmente <cbc:ID> v XML subore alebo pouzite prazdne pole pre auto-generovanie.')
-      else if Pos('HTTP 422', E.Message) > 0 then
+      if Pos('HTTP 422', E.Message) > 0 then
       begin
         Log('CHYBA 422: XML nepreslo Peppol validaciou.');
         Log('Detail: ' + E.Message);
