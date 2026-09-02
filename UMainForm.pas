@@ -47,7 +47,6 @@ type
     procedure btnCheckInboxClick(Sender: TObject);
     procedure btnDownloadSelectedClick(Sender: TObject);
     procedure btnAcknowledgeSelectedClick(Sender: TObject);
-    procedure FormDestroy(Sender: TObject);
   private
     FClient: TEpostakClient;
     FInboxItems: TEpostakDocumentListResult;
@@ -446,7 +445,7 @@ begin
       FormatDateTime('yyyy-mm-dd', Now + 30),
       edtParticipantId.Text,
       edtReceiverId.Text);
-  end;
+  end
   else
   begin
     if not FileExists(edtXMLFile.Text) then
@@ -650,6 +649,11 @@ begin
   finally
     DocIds.Free;
   end;
+end;
+
+procedure TFormMain.FormDestroy(Sender: TObject);
+begin
+  FreeAndNil(FClient);
 end;
 
 end.
