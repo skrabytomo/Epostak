@@ -498,10 +498,12 @@ begin
       edtReceiverId.Text,
       UblXml
     );
-    Log('OK — dokument odoslany. providerDocumentId: ' + DocId);
+    if DocId = '' then
+      ShowMessage('Tento dokument uz bol odoslany (duplicitny documentId).'#13#10 +
+        'Zmente <cbc:ID> v XML subore alebo pouzite prazdne pole pre auto-generovanie.')
+    else
+      Log('OK — dokument odoslany. providerDocumentId: ' + DocId);
   except
-    on E: EDuplicateDocument do
-      ShowMessage(E.Message);
     on E: Exception do
     begin
       if Pos('HTTP 422', E.Message) > 0 then

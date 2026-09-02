@@ -17,8 +17,6 @@ uses
   Classes, SysUtils, Windows, WinInet;
 
 type
-  EDuplicateDocument = class(Exception);
-
   TEpostakResult = record
     HTTPStatus: Integer;
     ResponseBody: string;   // surove bajty tak, ako prisli po sieti (UTF-8)
@@ -696,8 +694,10 @@ begin
   end;
 
   if R.HTTPStatus = 409 then
-    raise EDuplicateDocument.Create('Tento dokument uz bol odoslany (duplicitny documentId).'#13#10 +
-      'Zmente <cbc:ID> v XML subore alebo pouzite prazdne pole pre auto-generovanie.');
+  begin
+    Result := '';  { kalkulovana prazdna hodnota signalizuje duplicate }
+    Exit;
+  end;
   CheckResult(R, 'SendInvoice');
   Result := ExtractJSONString(R.ResponseBody, 'providerDocumentId');
 end;
