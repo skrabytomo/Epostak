@@ -88,6 +88,9 @@ type
     function GetDocumentXML(const ADocumentId: string): string;
     procedure AcknowledgeDocument(const ADocumentId: string);
 
+    function ConfigMatches(const ABaseURL, AClientId, AClientSecret,
+      AParticipantId: string): Boolean;
+
     property ParticipantId: string read FParticipantId write FParticipantId;
   end;
 
