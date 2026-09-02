@@ -3,7 +3,7 @@ unit UMainForm;
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  Windows, Messages, SysUtils, StrUtils, Classes, Graphics, Controls, Forms, Dialogs,
   StdCtrls, ComCtrls, ExtCtrls, IniFiles, FileCtrl,
   EpostakClient, EpostakDemoCreds;
 
@@ -52,6 +52,7 @@ type
   private
     FClient: TEpostakClient;
     FInboxItems: TEpostakDocumentListResult;
+    FSentDocIds: TStringList;
     function ConfigFileName: string;
     procedure Log(const AMsg: string);
     function MakeClient: TEpostakClient;
@@ -65,6 +66,7 @@ type
     function ValidateUBLXml(const AXml: string): string;
     function FormatISODateTime(const AISO: string): string;
     function ShortDocType(const AFullType: string): string;
+    function ExtractXmlValue(const AXml, ATag: string): string;
   end;
 
 var
@@ -78,6 +80,22 @@ const
 implementation
 
 {$R *.dfm}
+
+function TFormMain.ExtractXmlValue(const AXml, ATag: string): string;
+var
+  OpenTag, CloseTag: string;
+  P, Q: Integer;
+begin
+  Result := '';
+  OpenTag := '<' + ATag + '>';
+  CloseTag := '</' + ATag + '>';
+  P := Pos(OpenTag, AXml);
+  if P = 0 then Exit;
+  P := P + Length(OpenTag);
+  Q := PosEx(CloseTag, AXml, P);
+  if Q = 0 then Exit;
+  Result := Copy(AXml, P, Q - P);
+end;
 
 function TFormMain.ConfigFileName: string;
 begin
@@ -334,6 +352,7 @@ procedure TFormMain.FormCreate(Sender: TObject);
 var
   Ini: TIniFile;
 begin
+  FSentDocIds := TStringList.Create;
   SetupColumns;
   edtBaseURL.Text := EPOSTAK_SANDBOX_BASE_URL;
   edtParticipantId.Text := FIRM_A_ID;
@@ -418,7 +437,7 @@ end;
 procedure TFormMain.btnSendClick(Sender: TObject);
 var
   Client: TEpostakClient;
-  UblXml, DocId, ValidationErrors: string;
+  UblXml, DocId, XmlDocId, ValidationErrors: string;
 begin
   if Trim(edtBaseURL.Text) = '' then
   begin
@@ -465,6 +484,15 @@ begin
     Exit;
   end;
 
+  { Kontrola duplicitneho documentId v XML }
+  XmlDocId := ExtractXmlValue(UblXml, 'cbc:ID');
+  if (XmlDocId <> '') and FSentDocIds.IndexOf(XmlDocId) >= 0 then
+  begin
+    Log('CHYBA: Dokument s ID "' + XmlDocId + '" uz bol odoslany v tejto relacii (409 duplicate).');
+    Log('Zmente <cbc:ID> v XML alebo pouzite prazdne pole pre auto-generovanie.');
+    Exit;
+  end;
+
   { Client-side validacia pred odoslanim }
   ValidationErrors := ValidateUBLXml(UblXml);
   if ValidationErrors <> '' then
@@ -472,7 +500,6 @@ begin
     Log('UPOZORNENIE: XML neobsahuje vsetky povinne elementy pre Peppol:');
     Log(ValidationErrors);
     Log('Odoslanie moze zlyhat s chybou 422. Pokracovat? (v produkcii zastavte a opravte XML)');
-    { V demo rezime pokracujeme, aby pouzivatel videl chybu zo servera }
   end;
 
   try
@@ -485,43 +512,47 @@ begin
     end;
   end;
 
+  DocId := 'SANDBOX-' + FormatDateTime('yyyy-mm-dd-hhnnss', Now) + '-' + IntToStr(Random(1000));
+  Log('Odosielam dokument ' + DocId + '...');
   try
-    DocId := 'SANDBOX-' + FormatDateTime('yyyy-mm-dd-hhnnss', Now) + '-' + IntToStr(Random(1000));
-    Log('Odosielam dokument ' + DocId + '...');
-    try
-      DocId := Client.SendInvoice(
-        DocId,
-        'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2::Invoice' +
-          '##urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0::2.1',
-        'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0',
-        edtParticipantId.Text,
-        edtReceiverId.Text,
-        UblXml
-      );
-      Log('OK — dokument odoslany. providerDocumentId: ' + DocId);
-    except
-      on E: Exception do
+    DocId := Client.SendInvoice(
+      DocId,
+      'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2::Invoice' +
+        '##urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0::2.1',
+      'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0',
+      edtParticipantId.Text,
+      edtReceiverId.Text,
+      UblXml
+    );
+    Log('OK — dokument odoslany. providerDocumentId: ' + DocId);
+    if XmlDocId <> '' then
+      FSentDocIds.Add(XmlDocId);
+  except
+    on E: Exception do
+    begin
+      if Pos('HTTP 409', E.Message) > 0 then
       begin
-        { Rozlisujeme typ chyby }
-        if Pos('HTTP 422', E.Message) > 0 then
-        begin
-          Log('CHYBA 422: XML nepreslo Peppol validaciou.');
-          Log('Detail: ' + E.Message);
-          Log('Riesenie: Skontrolujte XML voci pravidlam Peppol BIS 3.0');
-          Log('Validator: https://peppol.helger.com/public/menuitem-validation-bis3');
-        end
-        else if Pos('HTTP 502', E.Message) > 0 then
-        begin
-          Log('CHYBA 502: Server nedokazal dorucit dokument.');
-          Log('Detail: ' + E.Message);
-          Log('Riesenie: Overte ci prijemcove Participant ID existuje v Peppol.');
-        end
-        else
-          Log('CHYBA: ' + E.Message);
-      end;
+        Log('CHYBA 409: Dokument uz bol odoslany (duplicate).');
+        Log('Zmente <cbc:ID> v XML alebo pouzite auto-generovanie.');
+        if XmlDocId <> '' then
+          FSentDocIds.Add(XmlDocId); { pamatame si aj tento, aby sme varovali pri dalsom pokuse }
+      end
+      else if Pos('HTTP 422', E.Message) > 0 then
+      begin
+        Log('CHYBA 422: XML nepreslo Peppol validaciou.');
+        Log('Detail: ' + E.Message);
+        Log('Riesenie: Skontrolujte XML voci pravidlam Peppol BIS 3.0');
+        Log('Validator: https://peppol.helger.com/public/menuitem-validation-bis3');
+      end
+      else if Pos('HTTP 502', E.Message) > 0 then
+      begin
+        Log('CHYBA 502: Server nedokazal dorucit dokument.');
+        Log('Detail: ' + E.Message);
+        Log('Riesenie: Overte ci prijemcove Participant ID existuje v Peppol.');
+      end
+      else
+        Log('CHYBA: ' + E.Message);
     end;
-  finally
-    Client.Free;
   end;
 end;
 
@@ -539,18 +570,14 @@ begin
     end;
   end;
 
+  Log('Kontrolujem inbox pre ' + edtParticipantId.Text + '...');
   try
-    Log('Kontrolujem inbox pre ' + edtParticipantId.Text + '...');
-    try
-      FInboxItems := Client.ListReceived('RECEIVED', 100);
-      RefreshInboxList;
-      Log('Najdenych ' + IntToStr(Length(FInboxItems.Documents)) + ' dokumentov.');
-    except
-      on E: Exception do
-        Log('CHYBA: ' + E.Message);
-    end;
-  finally
-    Client.Free;
+    FInboxItems := Client.ListReceived('RECEIVED', 100);
+    RefreshInboxList;
+    Log('Najdenych ' + IntToStr(Length(FInboxItems.Documents)) + ' dokumentov.');
+  except
+    on E: Exception do
+      Log('CHYBA: ' + E.Message);
   end;
 end;
 
@@ -576,24 +603,20 @@ begin
     end;
   end;
 
-  try
-    ForceDirectories(edtSaveFolder.Text);
-    SavePath := edtSaveFolder.Text;
-    if (SavePath <> '') and (SavePath[Length(SavePath)] <> '\') then
-      SavePath := SavePath + '\';
-    SavePath := SavePath + DocId + '.xml';
+  ForceDirectories(edtSaveFolder.Text);
+  SavePath := edtSaveFolder.Text;
+  if (SavePath <> '') and (SavePath[Length(SavePath)] <> '\') then
+    SavePath := SavePath + '\';
+  SavePath := SavePath + DocId + '.xml';
 
-    Log('Stahujem ' + DocId + '...');
-    try
-      XML := Client.GetDocumentXML(DocId);
-      SaveRawBytesToFile(SavePath, XML);
-      Log('ULOZENE: ' + SavePath + ' (' + IntToStr(Length(XML)) + ' bajtov)');
-    except
-      on E: Exception do
-        Log('CHYBA pri stahovani: ' + E.Message);
-    end;
-  finally
-    Client.Free;
+  Log('Stahujem ' + DocId + '...');
+  try
+    XML := Client.GetDocumentXML(DocId);
+    SaveRawBytesToFile(SavePath, XML);
+    Log('ULOZENE: ' + SavePath + ' (' + IntToStr(Length(XML)) + ' bajtov)');
+  except
+    on E: Exception do
+      Log('CHYBA pri stahovani: ' + E.Message);
   end;
 end;
 
@@ -622,32 +645,27 @@ begin
       end;
     end;
 
-    try
-      Log('Potvrdzujem ' + IntToStr(DocIds.Count) + ' dokumentov...');
-      OkCount := 0;
-      FailCount := 0;
-      for i := 0 to DocIds.Count - 1 do
-      begin
-        try
-          Client.AcknowledgeDocument(DocIds[i]);
-          Inc(OkCount);
-          Log('  OK: ' + DocIds[i]);
-          { Pauza medzi volaniami aby sme nepresiahli rate limit (max 10/min) }
-          if i < DocIds.Count - 1 then
-            Sleep(1000);
-        except
-          on E: Exception do
-          begin
-            Inc(FailCount);
-            Log('  CHYBA [' + DocIds[i] + ']: ' + E.Message);
-          end;
+    Log('Potvrdzujem ' + IntToStr(DocIds.Count) + ' dokumentov...');
+    OkCount := 0;
+    FailCount := 0;
+    for i := 0 to DocIds.Count - 1 do
+    begin
+      try
+        Client.AcknowledgeDocument(DocIds[i]);
+        Inc(OkCount);
+        Log('  OK: ' + DocIds[i]);
+        if i < DocIds.Count - 1 then
+          Sleep(1000);
+      except
+        on E: Exception do
+        begin
+          Inc(FailCount);
+          Log('  CHYBA [' + DocIds[i] + ']: ' + E.Message);
         end;
       end;
-      Log('HOTOVO: ' + IntToStr(OkCount) + ' OK, ' + IntToStr(FailCount) + ' chyb.');
-      btnCheckInboxClick(nil);
-    finally
-      Client.Free;
     end;
+    Log('HOTOVO: ' + IntToStr(OkCount) + ' OK, ' + IntToStr(FailCount) + ' chyb.');
+    btnCheckInboxClick(nil);
   finally
     DocIds.Free;
   end;
@@ -660,10 +678,10 @@ begin
     try
       FClient.RevokeToken;
     except
-      { ignorujeme chybu pri zatvrani — token expiruje sam }
     end;
     FreeAndNil(FClient);
   end;
+  FreeAndNil(FSentDocIds);
 end;
 
 procedure TFormMain.btnUseSandboxClick(Sender: TObject);
