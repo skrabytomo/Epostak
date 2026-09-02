@@ -87,7 +87,9 @@ end;
 procedure TFormMain.Log(const AMsg: string);
 begin
   memLog.Lines.Add(AMsg);
-  SendMessage(memLog.Handle, EM_LINESCROLL, 0, MaxInt);
+  memLog.SelStart := Length(memLog.Text);
+  memLog.SelLength := 0;
+  SendMessage(memLog.Handle, EM_SCROLLCARET, 0, 0);
   Application.ProcessMessages;
 end;
 
